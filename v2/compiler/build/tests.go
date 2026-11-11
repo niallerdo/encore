@@ -158,6 +158,12 @@ func (b *builder) generateTestSpec(testCfg *GenerateTestSpecConfig) *TestSpec {
 
 		ldflags.WriteString(` -extldflags "-static"`)
 	}
+	if b.cfg.Ctx.Build.Debug == builderpkg.DebugModeDisabled {
+		// Omit DWARF: nothing reads it from a test binary that isn't being
+		// debugged, and generating it is a large part of linking's time and
+		// memory for a big app. Stack traces use the pclntab, which stays.
+		ldflags.WriteString(" -w")
+	}
 	args = append(args, "-ldflags", ldflags.String())
 
 	if b.cfg.Ctx.Build.Debug != builderpkg.DebugModeDisabled {
