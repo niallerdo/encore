@@ -6,6 +6,7 @@ import (
 
 	"encr.dev/internal/conf"
 	"encr.dev/pkg/watcher"
+	meta "encr.dev/proto/encore/parser/meta/v1"
 )
 
 func newTestInstance(t *testing.T) *Instance {
@@ -112,5 +113,35 @@ func TestWatchFailure(t *testing.T) {
 		if i.isWatching() {
 			t.Fatalf("attempt %d: watcher running after failed Watch", n)
 		}
+	}
+}
+
+// TestCachedMetadataIsNotRetained verifies the metadata round-trips through the
+// cache file and the Instance keeps no reference to the parse's copy, which
+// for a large app holds the parse's memory alive.
+func TestCachedMetadataIsNotRetained(t *testing.T) {
+	t.Setenv("ENCORE_CACHE_DIR", t.TempDir())
+	i := newTestInstance(t)
+
+	md, err := i.CachedMetadata()
+	if err != nil || md != nil {
+		t.Fatalf("CachedMetadata before caching = %v, %v; want nil, nil", md, err)
+	}
+
+	orig := &meta.Data{ModulePath: "example.com/app"}
+	if err := i.CacheMetadata(orig); err != nil {
+		t.Fatalf("CacheMetadata: %v", err)
+	}
+	orig.ModulePath = "changed-after-caching"
+
+	got, err := i.CachedMetadata()
+	if err != nil {
+		t.Fatalf("CachedMetadata: %v", err)
+	}
+	if got == orig {
+		t.Fatal("CachedMetadata returned the parse's metadata object; it should be read back from the cache file")
+	}
+	if got.ModulePath != "example.com/app" {
+		t.Fatalf("ModulePath = %q, want %q", got.ModulePath, "example.com/app")
 	}
 }
