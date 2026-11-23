@@ -24,7 +24,9 @@ import (
 var testCmd = &cobra.Command{
 	Use:   "test [go test flags]",
 	Short: "Tests your application",
-	Long:  "Takes all the same flags as `go test`.",
+	Long: "Takes all the same flags as `go test`.\n\n" +
+		"Set ENCORE_TEST_DISABLE_TRACING=1 to run the tests without collecting traces,\n" +
+		"which saves each test waiting for its trace to reach the daemon.",
 
 	DisableFlagsInUseLine: true,
 	Run: func(cmd *cobra.Command, args []string) {

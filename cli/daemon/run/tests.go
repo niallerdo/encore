@@ -284,7 +284,7 @@ func (mgr *Manager) testSpec(ctx context.Context, bld builder.Impl, expSet *expe
 		md:                parse.Meta,
 		AppID:             option.Some(params.App.PlatformOrLocalID()),
 		EnvID:             option.Some("test"),
-		TraceEndpoint:     option.Some(fmt.Sprintf("http://localhost:%d/trace", mgr.RuntimePort)),
+		TraceEndpoint:     testTraceEndpoint(params.Environ, mgr.RuntimePort),
 		AuthKey:           authKey,
 		Gateways:          gateways,
 		DefinedSecrets:    secrets,
@@ -317,4 +317,27 @@ func (mgr *Manager) testSpec(ctx context.Context, bld builder.Impl, expSet *expe
 	})
 	prepared = err == nil
 	return spec, err
+}
+
+// disableTestTracingEnv, set to a true value in the environment of
+// `encore test`, runs the tests without tracing. A traced test streams its
+// trace to the daemon when it ends and waits until it is sent, which costs
+// every test seconds on a loaded machine; callers that never look at test
+// traces, such as CI, can skip that.
+const disableTestTracingEnv = "ENCORE_TEST_DISABLE_TRACING"
+
+// testTraceEndpoint returns the trace endpoint for a test run, or None when
+// the caller's environment disables test tracing. Without an endpoint the
+// runtime creates no tracer, so tests are neither traced nor wait on one.
+func testTraceEndpoint(environ []string, runtimePort int) option.Option[string] {
+	// The last assignment wins, as it does for a process environment.
+	for i := len(environ) - 1; i >= 0; i-- {
+		if v, ok := strings.CutPrefix(environ[i], disableTestTracingEnv+"="); ok {
+			if disabled, err := strconv.ParseBool(v); err == nil && disabled {
+				return option.None[string]()
+			}
+			break
+		}
+	}
+	return option.Some(fmt.Sprintf("http://localhost:%d/trace", runtimePort))
 }
