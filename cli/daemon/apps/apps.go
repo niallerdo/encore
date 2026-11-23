@@ -304,8 +304,11 @@ type Instance struct {
 	nextWatchID WatchSubscriptionID
 	watchers    map[WatchSubscriptionID]*watchSubscription
 
-	mdMu     sync.Mutex
-	cachedMd *meta.Data
+	// mdMu serializes writes and reads of the metadata file. The metadata is
+	// not kept in memory: for a large app it holds hundreds of megabytes, much
+	// of it source strings from the parse it came from, and the daemon keeps an
+	// Instance for every checkout it has seen.
+	mdMu sync.Mutex
 }
 
 func NewInstance(root, localID, platformID string) *Instance {
@@ -570,8 +573,6 @@ func (i *Instance) CacheMetadata(md *meta.Data) error {
 	i.mdMu.Lock()
 	defer i.mdMu.Unlock()
 
-	i.cachedMd = md
-
 	cacheDir, err := i.CachePath()
 	if err != nil {
 		return err
@@ -595,10 +596,6 @@ func (i *Instance) CachedMetadata() (*meta.Data, error) {
 	i.mdMu.Lock()
 	defer i.mdMu.Unlock()
 
-	if i.cachedMd != nil {
-		return i.cachedMd, nil
-	}
-
 	cacheDir, err := i.CachePath()
 	if err != nil {
 		return nil, err
@@ -617,8 +614,6 @@ func (i *Instance) CachedMetadata() (*meta.Data, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to unmarshal metadata")
 	}
-
-	i.cachedMd = md
 	return md, nil
 }
 
