@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -61,6 +62,7 @@ import (
 // Main runs the daemon.
 func Main() {
 	watcher.BumpRLimitSoftToHardLimit()
+	setDaemonMemoryLimit()
 
 	if err := redirectLogOutput(); err != nil {
 		log.Error().Err(err).Msg("could not setup daemon log file, skipping")
@@ -68,6 +70,23 @@ func Main() {
 	if err := runMain(); err != nil {
 		log.Fatal().Err(err).Msg("daemon failed")
 	}
+}
+
+// setDaemonMemoryLimit applies ENCORE_DAEMON_MEMORY_LIMIT (bytes) as the
+// daemon's soft memory limit, so the runtime returns freed heap to the OS
+// instead of holding its high-water mark. It is not GOMEMLIMIT so the go
+// toolchain and test binaries the daemon starts do not inherit it.
+func setDaemonMemoryLimit() {
+	v := os.Getenv("ENCORE_DAEMON_MEMORY_LIMIT")
+	if v == "" {
+		return
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		log.Warn().Str("value", v).Msg("ignoring invalid ENCORE_DAEMON_MEMORY_LIMIT")
+		return
+	}
+	debug.SetMemoryLimit(n)
 }
 
 func runMain() (err error) {

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -135,6 +137,20 @@ func (mgr *Manager) TestSpec(ctx context.Context, params TestSpecParams) (*TestS
 	}, nil
 }
 
+// testSpecSlots bounds how many test specs the daemon computes at once, when
+// ENCORE_DAEMON_TEST_SPEC_CONCURRENCY is set to a positive number. Computing a
+// spec parses the whole app, which holds about a gigabyte for a large app until
+// the spec is done, so concurrent `encore test` runs multiply the daemon's
+// memory. The tests themselves, which take most of the time, still run in
+// parallel. Unset or 0 means no bound.
+var testSpecSlots = func() chan struct{} {
+	n, err := strconv.Atoi(os.Getenv("ENCORE_DAEMON_TEST_SPEC_CONCURRENCY"))
+	if err != nil || n <= 0 {
+		return nil
+	}
+	return make(chan struct{}, n)
+}()
+
 func (mgr *Manager) newTestResources(params *TestSpecParams) *infra.ResourceManager {
 	return infra.NewResourceManager(params.App, mgr.ClusterMgr, mgr.ObjectsMgr, mgr.PublicBuckets, params.NS, nil, mgr.DBProxyPort, true)
 }
@@ -148,6 +164,15 @@ func (mgr *Manager) testSpec(ctx context.Context, bld builder.Impl, expSet *expe
 			rm.StopAll()
 		}
 	}()
+
+	if testSpecSlots != nil {
+		select {
+		case testSpecSlots <- struct{}{}:
+			defer func() { <-testSpecSlots }()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 
 	var secrets map[string]string
 	if params.Secrets != nil {
